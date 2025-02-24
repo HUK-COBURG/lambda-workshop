@@ -1,0 +1,113 @@
+= NodeJS Beispiel
+
+Das Beispiel für NodeJS ist im Unterordner `node` zu finden.
+Es verwendet ausschließlich Node JS und nutzt die managed Node Runtime für Lambda
+
+== Projekt Setup
+
+Das Projekt besitzt eine `package.json`, in der mit `npm` die Abhängigkeiten verwaltet werden:
+
+[source,json]
+----
+include::./src/package.json[]
+----
+
+Hier sind ausschließlich `devDependencies` zu sehen, da die managed Lambda Node Runtime selbst die entsprechenden AWS SDKs direkt mit bringt.
+Insofern ist es nicht notwendig, Abhängigkeiten einzuführen, die den Zugriff auf AWS Services erlauben, wodurch sich die Paketierung auch auf den eigentlichen fachlichen Prozess konzentrieren kann.
+Dies verschlankt die Paketgröße deutlich.
+Im vorliegenden Beispiel liegt der gesamte Code in einer einzigen relativ kleinen Datei.
+
+== JavaScript Implementierung
+
+Lambda benötigt zur Ausführung einen Handler, der als exportierte Funktion in der entsprechenden JavaScript Datei deklariert ist:
+
+[source,javascript]
+----
+include::./src/index.mjs[tags=handler]
+----
+
+Dieser Handler geht davon aus, dass die Lambda über ein API Gateway aufgerufen wird.
+Aus diesem Grund reagiert der Handler auf die `httpMethod` im Event und parsed entweder den `body` oder liest das Feld `pathParameters` aus, um die übergebene `petId` auszulesen.
+
+Als Client für DynamoDB kommt hier ein `DocumentClient` zum Einsatz, der einige Vereinfachungen zur DynamoDB Low Level API mit sich bringt:
+
+[source,javascript]
+----
+include::./src/index.mjs[tags=get_pet]
+----
+
+[source,javascript]
+----
+include::./src/index.mjs[tags=create_pet]
+----
+
+== Terraform
+
+Im Verzeichnis `src/terraform` des Beispiels ist der benötigte Terraform Code abgelegt.
+Hier wird ein S3 Bucket zur Ablage des Codes erzeugt:
+
+[source,hcl-terraform]
+----
+include::./terraform/bucket.tf[]
+----
+
+Hier wird die einzige JavaScript Datei (`index.mjs`) mittels `archive_file` in ein zip-Archiv komprimiert und dieses als Quelltext in einen S3 Bucket geladen.
+
+Die DynamoDB Table wird unter Berücksichtigung eines numerischen partition key erzeugt:
+
+[source,hcl-terraform]
+----
+include::./terraform/dynamodb.tf[]
+----
+
+Das API Gateway wird aus der Datei `resources/openapi.yaml` erzeugt, die Template Code enthält:
+
+[source,yaml]
+----
+include::./resources/openapi.yaml[]
+----
+
+Hier ist neben der API Spezifikation an jeder Methode eine Extension annotiert, die die Integration mit dem AWS API Gateway repräsentiert:
+
+[source,yaml]
+----
+include::./resources/openapi.yaml[tags=gateway-integration,indent=0]
+----
+
+Mithilfe dieser Integration wird auf eine `lambda_invoke_arn` verwiesen, um bei Aufruf der Methode eine Lambda Funktion auszulösen.
+In diesem Fall ist die `lambda_invoke_arn` als Terraform Template Variable realisiert, um die entsprechende `arn` extern bei der Erstellung des API Gateway aus dem tatsächlichen Wert zu parametrisieren:
+
+[source,hcl-terraform]
+----
+include::./terraform/api-gateway.tf[]
+----
+
+Dies erstellt das REST API Gateway mit Verweis auf die `lambda_function_invoke_arn` im Template.
+Dadurch wird dynamisch die Lambda mit dem API Gateway verbunden, um diese bei den entsprechenden REST API Calls aufrufen zu können.
+
+Die Lambda Funktion wird aus dem Quelltext auf S3 erstellt:
+
+[source,hcl-terraform]
+----
+include::./terraform/lambda.tf[]
+----
+
+Hier wird weiterhin die Umgebungsvariable `DYNAMODB_TABLE_ID` übergeben, die im `Handler` ausgelesen wird, um die richtige Table zu nutzen.
+Außerdem werden Trigger seitens des API Gateway erlaubt und eine IAM Policy angehangen, die Schreib- und Leseoperationen auf der DynamoDB Table erlaubt.
+
+== Testing
+
+Für e2e-Tests liegt im Projekt die Datei `requests.http`.
+Diese funktioniert mit dem IntelliJ HTTP Client:
+
+[source,httprequest]
+----
+include::./src/requests.http[]
+----
+
+Zur erfolgreichen Ausführung muss vorher die `api-url` in der Datei `http-client.env.json` auf den passenden Wert aus der erstellten Infrastruktur konfiguriert werden.
+
+[source,json]
+----
+include::./src/http-client.env.json[]
+----

@@ -1,0 +1,165 @@
+= Spring Boot Beispiel
+
+Das Spring Boot Beispiel ist im Unterordner `spring-boot-lambda` zu finden.
+Es verwendet Spring Boot als Framework, um die Funktionalitäten in Lambda abzubilden
+
+== Projekt Setup
+
+Das Projekt wurde auf Basis von Spring Boot `3.4.2` erstellt:
+
+[source,xml]
+----
+include::./pom.xml[tags=parent, indent=0]
+----
+
+Zusätzlich dazu wurde eine Proxy Schicht für die Verwendung von Lambda hinzugefügt:
+
+[source,xml]
+----
+include::./pom.xml[tags=request_proxy, indent=0]
+----
+
+Um mit DynamoDB zu interagieren wird in diesem Projekt der DynamoDB Enhanced Client genutzt, der einige Transformationen im Stile eines ORM bereitstellt.
+Die Dependencies sind folgende:
+
+.AWS SDK BOM
+[source,xml]
+----
+include::./pom.xml[tags=aws_sdk, indent=0]
+----
+
+.DynamoDB Enhanced Client
+[source,xml]
+----
+include::./pom.xml[tags=dynamodb_enhanced, indent=0]
+----
+
+Lambda setzt voraus, dass eine einzige zip-Datei existiert, in der jeglicher Quelltext (oder im Falle von Java: Bytecode) in einer flachen bzw. entpackten Struktur enthalten ist.
+In diesem Beispiel wird das `maven-assembly-plugin` genutzt, um die passende Struktur zu definieren:
+
+.Maven Dependency Plugin
+[source,xml]
+----
+include::./pom.xml[tags=assembly, indent=0]
+----
+
+Zusätzlich zur Plugin Konfiguration ist auch die Definition des Assembly Descriptors notwendig:
+
+[source,xml]
+----
+include::./src/assembly/bin.xml[]
+----
+
+Diese Beschreibung erstellt die für AWS Lambda notwendige zip-Datei, die genutzt werden kann, um den Code als Lambda Funktion zu betreiben.
+
+== Java Implementierung
+
+Lambda benötigt als Einstiegspunkt für Java eine Handlerklasse, die das Interface `RequestHandler` implementiert.
+In dieser Klasse wird der eingehende Request entgegengenommen, verarbeitet und das Resultat zurückgegeben.
+Ein Beispiel dafür ist in der Klasse `Handler` im Beispielprojekt zu finden:
+
+[source,java]
+----
+include::./src/main/java/de/huk/web/schaden/springbootlambda/Handler.java[]
+----
+
+Mit dieser Implementierung wird auf ein Proxy Handler Objekt weitergeleitet, das seinerseits die Requests über die Standard `RestController` weiterverteilt.
+
+Der `RestController` ist in der Klasse `PetController` implementiert und repräsentiert die Schnittstelle aus `src/main/resources/openapi.yaml`:
+
+[source,java]
+----
+include::./src/main/java/de/huk/web/schaden/springbootlambda/PetController.java[]
+----
+
+Hier werden abhängig von der übergebenen HTTP Methode Funktionen aufgerufen, die entweder ein `Pet` anlegen oder es aus einer Datenbasis laden.
+
+Die Persistenz wird über die Klasse `DynamoDBPetClient` realisiert.
+Dort wird der DynamoDB Enhanced Client verwendet, der das Mapping zwischen DynamoDB Modell und dem Java Klassenmodell implementiert.
+Insofern muss lediglich die Klasse `Pet` entsprechend annotiert werden, um mit diesem Client zu interagieren:
+
+.Pet mit Annotationen
+[source,java]
+----
+include::./src/main/java/de/huk/web/schaden/springbootlambda/Pet.java[]
+----
+
+.DynamoDB Client
+[source,java]
+----
+include::./src/main/java/de/huk/web/schaden/springbootlambda/DynamoDBPetClient.java[]
+----
+
+An dieser Stelle wird der Wert für den DynamoDB Table Namen als `@Value` im Konstruktor injiziert.
+
+== Terraform
+
+Im Verzeichnis `src/main/terraform` des Beispiels ist der benötigte Terraform Code abgelegt.
+Hier wird ein S3 Bucket zur Ablage des Codes erzeugt:
+
+[source,hcl-terraform]
+----
+include::./src/main/terraform/bucket.tf[]
+----
+
+Hier wird davon ausgegangen, dass das Projekt erfolgreich kompiliert wurde und auf das Artefakt aus dem `assembly-plugin` zugegriffen.
+Das Artefakt wird unter dem Key des MD5 Hash hochgeladen, um auf lokale Änderungen zu reagieren.
+
+Die DynamoDB Table wird unter Berücksichtigung eines numerischen partition key erzeugt:
+
+[source,hcl-terraform]
+----
+include::./src/main/terraform/dynamodb.tf[]
+----
+
+Das API Gateway wird aus der Datei `src/main/resources/openapi.yaml` erzeugt, die Template Code enthält:
+
+[source,yaml]
+----
+include::./src/main/resources/openapi.yaml[]
+----
+
+Hier ist neben der API Spezifikation an jeder Methode eine Extension annotiert, die die Integration mit dem AWS API Gateway repräsentiert:
+
+[source,yaml]
+----
+include::./src/main/resources/openapi.yaml[tags=gateway-integration,indent=0]
+----
+
+Mithilfe dieser Integration wird auf eine `lambda_invoke_arn` verwiesen, um bei Aufruf der Methode eine Lambda Funktion auszulösen.
+In diesem Fall ist die `lambda_invoke_arn` als Terraform Template Variable realisiert, um die entsprechende `arn` extern bei der Erstellung des API Gateway aus dem tatsächlichen Wert zu parametrisieren:
+
+[source,hcl-terraform]
+----
+include::./src/main/terraform/api-gateway.tf[]
+----
+
+Dies erstellt das REST API Gateway mit Verweis auf die `lambda_function_invoke_arn` im Template.
+Dadurch wird dynamisch die Lambda mit dem API Gateway verbunden, um diese bei den entsprechenden REST API Calls aufrufen zu können.
+
+Die Lambda Funktion wird aus dem Quelltext auf S3 erstellt:
+
+[source,hcl-terraform]
+----
+include::./src/main/terraform/lambda.tf[]
+----
+
+Hier wird weiterhin die Umgebungsvariable `DYNAMODB_TABLE_ID` übergeben, die im `Handler` ausgelesen wird, um die richtige Table zu nutzen.
+Außerdem werden Trigger seitens des API Gateway erlaubt und eine IAM Policy angehangen, die Schreib- und Leseoperationen auf der DynamoDB Table erlaubt.
+
+== Testing
+
+Für e2e-Tests liegt im Projekt die Datei `requests.http`.
+Diese funktioniert mit dem IntelliJ HTTP Client:
+
+[source,httprequest]
+----
+include::./requests.http[]
+----
+
+Zur erfolgreichen Ausführung muss vorher die `api-url` in der Datei `http-client.env.json` auf den passenden Wert aus der erstellten Infrastruktur konfiguriert werden.
+
+[source,json]
+----
+include::./http-client.env.json[]
+----

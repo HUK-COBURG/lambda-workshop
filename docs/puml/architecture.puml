@@ -1,0 +1,32 @@
+@startuml
+!pragma layout smetana
+
+'left to right direction
+!include <awslib/AWSCommon.puml>
+!include <awslib/AWSSimplified>
+!include <awslib/ApplicationIntegration/APIGateway.puml>
+!include <awslib/Compute/Lambda.puml>
+!include <awslib/Database/DynamoDB.puml>
+!include <awslib/Groups/AWSCloud.puml>
+
+skinparam node {
+  BackgroundColor Transparent
+}
+
+AWSCloudGroup("") {
+    APIGateway(api, "API", "Regional")
+
+    Lambda(lambda, "Lambda", "Quarkus")
+
+    DynamoDB(dynamodb, "Database", "Serverless")
+
+}
+
+actor Browser
+
+Browser -> api
+
+api -> lambda
+
+lambda -> dynamodb
+@enduml

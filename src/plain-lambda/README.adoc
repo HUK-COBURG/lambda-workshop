@@ -1,0 +1,166 @@
+= Plain Java Beispiel
+
+Das Plain Java Beispiel ist im Unterordner `plain-lambda` zu finden.
+Es verwendet keine zusätzlichen Frameworks.
+Die verwendeten Bibliotheken bilden die AWS Clients ab sowie Jackson für die Interaktion mit json Daten.
+
+== Projekt Setup
+
+Das Projekt wurde auf Basis von Maven erstellt und enthält nur einen minimalen Satz an Abhängigkeiten:
+
+.AWS Lambda Core und Event Strukturen
+[source,xml]
+----
+include::./pom.xml[tags=lambda-dependencies, indent=0]
+----
+
+Diese Abhängigkeiten sind die einzig notwendigen für die Verwendung von AWS Lambda.
+In der Bibliothek `aws-lambda-java-events` sind Eventstrukturen für AWS Services implementiert, die beispielsweise das Event für einen Aufruf seitens eines API Gateway repräsentieren.
+
+Um mit DynamoDB zu interagieren wird in diesem Projekt der DynamoDB Enhanced Client genutzt, der einige Transformationen im Stile eines ORM bereitstellt.
+Die Dependencies sind folgende:
+
+.AWS SDK BOM
+[source,xml]
+----
+include::./pom.xml[tags=aws_sdk, indent=0]
+----
+
+.DynamoDB Enhanced Client
+[source,xml]
+----
+include::./pom.xml[tags=dynamodb_enhanced, indent=0]
+----
+
+Lambda setzt voraus, dass eine einzige zip-Datei existiert, in der jeglicher Quelltext (oder im Falle von Java: Bytecode) in einer flachen bzw. entpackten Struktur enthalten ist.
+Hierfür wird in diesem Beispiel das `maven-shade-plugin` verwendet, um eine jar-Datei zu erzeugen, die alle Abhängigkeiten enthält.
+jar-Dateien sind per se zip-Dateien, weswegen diese Datei im Ergebnis hochgeladen und vom AWS Service Lambda als Quelltext verwendet werden kann.
+
+.Maven Shade Plugin
+[source,xml]
+----
+include::./pom.xml[tags=shade, indent=0]
+----
+
+== Java Implementierung
+
+Lambda benötigt als Einstiegspunkt für Java eine Handlerklasse, die das Interface `RequestHandler` implementiert.
+In dieser Klasse wird der eingehende Request entgegengenommen, verarbeitet und das Resultat zurückgegeben.
+Ein Beispiel dafür ist in der Klasse `Handler` im Beispielprojekt zu finden:
+
+[source,java]
+----
+include::./src/main/java/de/huk/web/schaden/Handler.java[tags=handler,]
+include::./src/main/java/de/huk/web/schaden/Handler.java[tags=handle_request,]
+}
+----
+
+In diesem Beispiel wird das `APIGatewayProxyRequestEvent` bzw. `APIGatewayProxyResponseEvent` verwendet, das einen Aufruf durch ein AWS API Gateway repräsentiert.
+
+Hier werden abhängig von der übergebenen HTTP Methode Funktionen aufgerufen, die entweder ein `Pet` anlegen oder es aus einer Datenbasis laden.
+
+Im Konstruktor der Klasse `Handler` wird die DynamoDB Table ID aus einer Umgebungsvariable geladen, wobei ein Fallback hinterlegt wird.
+Außerdem wird der `petClient` initialisiert, der die Abstraktionsschicht zur DynamoDB darstellt:
+
+[source,java]
+----
+include::./src/main/java/de/huk/web/schaden/Handler.java[tags=initialization,indent=0]
+----
+
+Der Abruf einer Instanz der Klasse `Pet` aus dem Datenspeicher ist in folgendem Snippet zu finden:
+
+[source,java]
+----
+include::./src/main/java/de/huk/web/schaden/Handler.java[tags=get_pet,indent=0]
+----
+
+Zunächst wird aus dem Pfadparameter `petId` die entsprechende ID ausgelesen, die dann über den Client dazu verwendet wird, das `Pet` zu laden.
+Das Resultat wird in ein `APIGatewayProxyResponseEvent` gekapselt, um die Kompatibilität mit dem API Gateway herzustellen.
+
+Die Persistenz wird über die Klasse `DynamoDBPetClient` realisiert.
+Dort wird der DynamoDB Enhanced Client verwendet, der das Mapping zwischen DynamoDB Modell und dem Java Klassenmodell implementiert.
+Insofern muss lediglich die Klasse `Pet` entsprechend annotiert werden, um mit diesem Client zu interagieren:
+
+.Pet mit Annotationen
+[source,java]
+----
+include::./src/main/java/de/huk/web/schaden/Pet.java[]
+----
+
+.DynamoDB Client
+[source,java]
+----
+include::./src/main/java/de/huk/web/schaden/DynamoDBPetClient.java[]
+----
+
+== Terraform
+
+Im Verzeichnis `src/main/terraform` des Beispiels ist der benötigte Terraform Code abgelegt.
+Hier wird ein S3 Bucket zur Ablage des Codes erzeugt:
+
+[source,hcl-terraform]
+----
+include::./src/main/terraform/bucket.tf[]
+----
+
+Hier wird davon ausgegangen, dass das Projekt erfolgreich kompiliert wurde und auf das Artefakt aus dem `shade-plugin` zugegriffen.
+Das Artefakt wird unter dem Key des MD5 Hash hochgeladen, um auf lokale Änderungen zu reagieren.
+
+Die DynamoDB Table wird unter Berücksichtigung eines numerischen partition key erzeugt:
+
+[source,hcl-terraform]
+----
+include::./src/main/terraform/dynamodb.tf[]
+----
+
+Das API Gateway wird aus der Datei `src/main/resources/openapi.yaml` erzeugt, die Template Code enthält:
+
+[source,yaml]
+----
+include::./src/main/resources/openapi.yaml[]
+----
+
+Hier ist neben der API Spezifikation an jeder Methode eine Extension annotiert, die die Integration mit dem AWS API Gateway repräsentiert:
+
+[source,yaml]
+----
+include::./src/main/resources/openapi.yaml[tags=gateway-integration,indent=0]
+----
+
+Mithilfe dieser Integration wird auf eine `lambda_invoke_arn` verwiesen, um bei Aufruf der Methode eine Lambda Funktion auszulösen.
+In diesem Fall ist die `lambda_invoke_arn` als Terraform Template Variable realisiert, um die entsprechende `arn` extern bei der Erstellung des API Gateway aus dem tatsächlichen Wert zu parametrisieren:
+
+[source,hcl-terraform]
+----
+include::./src/main/terraform/api-gateway.tf[]
+----
+
+Dies erstellt das REST API Gateway mit Verweis auf die `lambda_function_invoke_arn` im Template.
+Dadurch wird dynamisch die Lambda mit dem API Gateway verbunden, um diese bei den entsprechenden REST API Calls aufrufen zu können.
+
+Die Lambda Funktion wird aus dem Quelltext auf S3 erstellt:
+
+[source,hcl-terraform]
+----
+include::./src/main/terraform/lambda.tf[]
+----
+
+Hier wird weiterhin die Umgebungsvariable `DYNAMODB_TABLE_ID` übergeben, die im `Handler` ausgelesen wird, um die richtige Table zu nutzen.
+Außerdem werden Trigger seitens des API Gateway erlaubt und eine IAM Policy angehangen, die Schreib- und Leseoperationen auf der DynamoDB Table erlaubt.
+
+== Testing
+
+Für e2e-Tests liegt im Projekt die Datei `requests.http`.
+Diese funktioniert mit dem IntelliJ HTTP Client:
+
+[source,httprequest]
+----
+include::./requests.http[]
+----
+
+Zur erfolgreichen Ausführung muss vorher die `api-url` in der Datei `http-client.env.json` auf den passenden Wert aus der erstellten Infrastruktur konfiguriert werden.
+
+[source,json]
+----
+include::./http-client.env.json[]
+----

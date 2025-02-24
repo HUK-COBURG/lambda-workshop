@@ -1,0 +1,9 @@
+= Einschränkungen
+
+* lokale Testbarkeit (und fehlende Tests)
+** Testcontainers
+** localstack
+** Docker (bzw. Docker-Compose)
+* Operations
+** CI/CD
+** o11y

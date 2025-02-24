@@ -1,0 +1,18 @@
+= Vergleich der Lösungen
+
+Die Plain Java Lösung sowie die Node Lösung kommt jeweils weitestgehend ohne Abhängigkeiten aus.
+Die Node Lösung besitzt ihrerseits ausschließlich Runtime Abhängigkeiten, die als `devDependencies` deklariert sind, wohingegen die Plain Java Lösung einige direkte Abhängigkeiten, insbesondere in Richtung AWS SDK und JSON Processing aufweist.
+
+Dadurch ist es möglich, diese beiden Lösungen direkt nach Tutorials und Guides seitens AWS in Betrieb zu nehmen und keine zusätzlichen Wrapper einzubauen.
+
+Die Lösung mit Spring Boot verwendet eine weitere Zwischenschicht, die die Requests von AWS aufnimmt über die Lambda API und an die Spring Boot Schicht weiterleitet.
+Hier sind zusätzlich zu den ohnehin relativ umfangreichen Abhängigkeiten für Spring Boot weitere Proxy Schichten mit eingezogen, die in der Kompatibilität mit der verwendeten Spring Boot Version stehen müssen.
+Weiterhin muss das zip Artefakt auf eine bestimmte Weise verpackt werden, um die Kompatibilität zwischen Lambda API und Spring Boot herzustellen.
+
+Das Quarkus Beispiel nutzt verschiedene vorgegebene Techniken, um beispielsweise die OpenAPI Spezifikation zur Buildzeit vom Artefakt abzuleiten.
+Weiterhin existieren Erweiterungen, um direkt Lambda Funktionen als zip-Dateien zu generieren und entsprechende Dokumentation, um das Deployment testweise, z. B. über SAM, zu realisieren.
+Die Quarkus Variante bringt Quarkus Dev Services mit, die das Testen erleichtern, da sie direkt über Testcontainers entsprechende Services, wie DynamoDB starten können, um lokale Tests bzw. auch die Testautomatisierung für Integrationstests zu ermöglichen.
+
+Infrastrukturseitig sind die jeweiligen Lösungen fast identisch aufgebaut, weswegen hier hauptsächlich in Bezug auf die entsprechenden Frameworks und Lösungen zu Lambda Anpassungen erforderlich sind.
+Hier sind individuelle Anpassungen zur verwendeten Laufzeitumgebung, Handler und auch die Memory Settings zu treffen.
+Die Integration seitens API Gateway und DynamoDB sind infrastrukturseitig jeweils identisch, hier ändert sich ausschließlich die Variante der Ausführung des entsprechenden Codes.

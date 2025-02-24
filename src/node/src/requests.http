@@ -1,0 +1,24 @@
+POST {{api-url}}/pet
+Content-Type: application/json
+
+{
+  "id": 1234,
+  "name": "dog"
+}
+
+####
+POST {{api-url}}/pet
+Content-Type: application/json
+
+{
+  "id": 5678,
+  "name": "cat"
+}
+
+####
+GET {{api-url}}/pet/1234
+Content-Type: application/json
+
+####
+GET {{api-url}}/pet/5678
+Content-Type: application/json

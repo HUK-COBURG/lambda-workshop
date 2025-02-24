@@ -1,0 +1,157 @@
+= Quarkus Beispiel
+
+Das Quarkus Beispiel ist im Unterordner `quarkus-lambda` zu finden.
+Es verwendet Quarkus als Framework, um die Funktionalitäten in Lambda abzubilden.
+
+== Projekt Setup
+
+Das Projekt wurde auf Basis von Quarkus `3.18.3` erstellt.
+
+Quarkus unterstützt direkt die Integration mit AWS Lambda:
+
+[source,xml]
+----
+include::./pom.xml[tags=lambda, indent=0]
+----
+
+Um mit DynamoDB zu interagieren wird in diesem Projekt der DynamoDB Enhanced Client genutzt, der einige Transformationen im Stile eines ORM bereitstellt.
+Die Dependencies sind folgende:
+
+
+.DynamoDB Enhanced Client
+[source,xml]
+----
+include::./pom.xml[tags=dynamodb_client, indent=0]
+----
+
+Lambda setzt voraus, dass eine einzige zip-Datei existiert, in der jeglicher Quelltext (oder im Falle von Java: Bytecode) in einer flachen bzw. entpackten Struktur enthalten ist.
+Im Fall von Quarkus übernimmt dies die Lambda Extension.
+Hier wird zusätzlich zur jar-Datei noch eine `function.zip` Datei im `target` Verzeichnis abgelegt, die genutzt werden kann, eine Lambda Funktion zu erstellen:
+
+[source,xml]
+----
+include::./pom.xml[tags=lambda, indent=0]
+----
+
+Die Quarkus Extension `quarkus-smallrye-openapi` kann dazu verwendet werden, während des Buildprozesses die OpenAPI Spezifikation zu generieren.
+In diesem Beispiel wird die Datei als `openapi.yaml` bzw. `openapi.json` im `target` Verzeichnis abgelegt:
+
+.Store OpenAPI
+[source,xml]
+----
+<properties>
+include::./pom.xml[tags=store_schema, indent=4]
+</properties>
+<dependencies>
+include::./pom.xml[tags=openapi_generation, indent=4]
+</dependencies>
+----
+
+Hier können zusätzlich über entsprechende Annotationen die API Gateway Integrations integriert werden:
+
+.OpenAPI Extensions
+[source,java]
+----
+include::./src/main/java/de/huk/web/schaden/quarkus/OpenApiConstants.java[]
+----
+
+Diese Konstanten können an Ressourcen verwendet werden, um die OpenAPI mit den entsprechenden API Gateway Integrations zu erweitern:
+
+.OpenAPI Dokumentation
+[source,java]
+----
+include::./src/main/java/de/huk/web/schaden/quarkus/PetResource.java[tags=openapi, indent=0]
+----
+
+== Java Implementierung
+
+Die Klasse `PetResource` implementiert die REST Schnittstelle für die Verwaltung der `Pet` s.
+
+[source,java]
+----
+include::./src/main/java/de/huk/web/schaden/quarkus/PetResource.java[]
+----
+
+Hier werden hauptsächlich REST Interfaces bedient und die Funktionalität der Persistenz in das `PetRepository` ausgelagert.
+
+Die Persistenz wird über die Klasse `PetRepository` realisiert.
+Dort wird der DynamoDB Enhanced Client verwendet, der das Mapping zwischen DynamoDB Modell und dem Java Klassenmodell implementiert.
+Insofern muss lediglich die Klasse `Pet` entsprechend annotiert werden, um mit diesem Client zu interagieren:
+
+.Pet mit Annotationen
+[source,java]
+----
+include::./src/main/java/de/huk/web/schaden/quarkus/Pet.java[]
+----
+
+.DynamoDB Client
+[source,java]
+----
+include::./src/main/java/de/huk/web/schaden/quarkus/PetRepository.java[]
+----
+
+An dieser Stelle wird der Wert für den DynamoDB Table Namen als `@ConfigProperty` injiziert.
+
+== Terraform
+
+Der Lambda Handler wird von Quarkus vorgegeben und stellt die Proxy Funktionalität bereit, bei eingehenden REST Requests aus dem API Gateway auf die entsprechend deklarierten Ressourcen zu verweisen.
+Die zugehörige Klasse bzw. der `RequestHandler` heißt im Falle von Quarkus mit Lambda und REST: `io.quarkus.amazon.lambda.runtime.QuarkusStreamHandler::handleRequest`
+
+Im Verzeichnis `src/main/terraform` des Beispiels ist der benötigte Terraform Code abgelegt.
+Hier wird ein S3 Bucket zur Ablage des Codes erzeugt:
+
+[source,hcl-terraform]
+----
+include::./src/main/terraform/bucket.tf[]
+----
+
+Hier wird davon ausgegangen, dass das Projekt erfolgreich kompiliert wurde und auf das Artefakt der Quarkus Lambda Extension zugegriffen.
+Das Artefakt wird unter dem Key des MD5 Hash hochgeladen, um auf lokale Änderungen zu reagieren.
+
+Die DynamoDB Table wird unter Berücksichtigung eines numerischen partition key erzeugt:
+
+[source,hcl-terraform]
+----
+include::./src/main/terraform/dynamodb.tf[]
+----
+
+Das API Gateway wird aus der Datei `target/openapi.yaml` erzeugt, die Template Code enthält.
+Dieses wird dynamisch beim Kompilierungsvorgang erzeugt und enthält die entsprechenden Erweiterungen für die Amazon API Gateway Integration.
+
+Mithilfe dieser Integration wird auf eine `invoke_arn` verwiesen, um bei Aufruf der Methode eine Lambda Funktion auszulösen.
+In diesem Fall ist die `invoke_arn` als Terraform Template Variable realisiert, um die entsprechende `arn` extern bei der Erstellung des API Gateway aus dem tatsächlichen Wert zu parametrisieren:
+
+[source,hcl-terraform]
+----
+include::./src/main/terraform/api-gateway.tf[]
+----
+
+Dies erstellt das REST API Gateway mit Verweis auf die `lambda_function_invoke_arn` im Template.
+Dadurch wird dynamisch die Lambda mit dem API Gateway verbunden, um diese bei den entsprechenden REST API Calls aufrufen zu können.
+
+Die Lambda Funktion wird aus dem Quelltext auf S3 erstellt:
+
+[source,hcl-terraform]
+----
+include::./src/main/terraform/lambda.tf[]
+----
+
+Hier wird weiterhin die Umgebungsvariable `DYNAMODB_TABLE_ID` übergeben, die im `PetRepository` ausgelesen wird, um die richtige Table zu nutzen.
+Außerdem werden Trigger seitens des API Gateway erlaubt und eine IAM Policy angehangen, die Schreib- und Leseoperationen auf der DynamoDB Table erlaubt.
+
+== Testing
+
+Für e2e-Tests liegt im Projekt die Datei `requests.http`.
+Diese funktioniert mit dem IntelliJ HTTP Client:
+
+[source,httprequest]
+----
+include::./requests.http[]
+----
+
+Zur erfolgreichen Ausführung muss vorher die `api-url` in der Datei `http-client.env.json` auf den passenden Wert aus der erstellten Infrastruktur konfiguriert werden.
+
+[source,json]
+----
+include::./http-client.env.json[]
+----

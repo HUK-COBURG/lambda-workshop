@@ -1,0 +1,31 @@
+= AWS Lambda Workshop
+
+Dieser Workshop beschreibt eine Implementierung mit AWS Lambda in verschiedenen Varianten.
+Die Varianten beziehen sich hier ausschließlich auf die verwendeten Frameworks und Technologien.
+
+Allgemein wird folgende Architektur in drei verschiedenen Varianten deployed:
+
+[plantuml,"{plantUMLDir}/lambda-workshop/deployment-view",png]
+----
+include::docs/puml/architecture.puml[]
+----
+
+Die Varianten sind ausschließlich in der Implementierung der Lambda zu finden.
+Hier gibt es folgende Optionen:
+
+. Plain Java
+. Spring Boot 3
+. Quarkus
+. NodeJS
+
+include::src/plain-lambda/README.adoc[leveloffset=+1]
+
+include::src/spring-boot-lambda/README.adoc[leveloffset=+1]
+
+include::src/quarkus-lambda/README.adoc[leveloffset=+1]
+
+include::src/node/README.adoc[leveloffset=+1]
+
+include::docs/comparison.adoc[leveloffset=+1]
+
+include::docs/limitations.adoc[leveloffset=+1]

@@ -1,0 +1,90 @@
+openapi: 3.0.3
+info:
+  title: Pets
+  description: Petstore API
+  version: 1.0.1
+paths:
+  /pet:
+    post:
+      summary: Add a new pet to the store
+      description: Creates a new pet using the provided details.
+      operationId: addPet
+      requestBody:
+        description: Pet object that needs to be added to the store
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Pet'
+      responses:
+        "200":
+          description: Successful operation
+          content:
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Pet'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        "405":
+          description: Invalid input
+          # tag::gateway-integration[]
+      x-amazon-apigateway-integration:
+        httpMethod: "POST"
+        uri: "${lambda_invoke_arn}"
+        responses:
+          default:
+            statusCode: "200"
+        passthroughBehavior: "when_no_match"
+        contentHandling: "CONVERT_TO_TEXT"
+        type: "aws_proxy"
+        # end::gateway-integration[]
+  /pet/{petId}:
+    get:
+      tags:
+        - pet
+      summary: Find pet by ID
+      description: Returns a single pet
+      operationId: getPetById
+      parameters:
+        - name: petId
+          in: path
+          description: ID of pet to return
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        "400":
+          description: Invalid ID supplied
+        "404":
+          description: Pet not found
+      x-amazon-apigateway-integration:
+        httpMethod: "POST"
+        uri: "${lambda_invoke_arn}"
+        responses:
+          default:
+            statusCode: "200"
+        passthroughBehavior: "when_no_match"
+        contentHandling: "CONVERT_TO_TEXT"
+        type: "aws_proxy"
+components:
+  schemas:
+    Pet:
+      required:
+        - name
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 10
+        name:
+          type: string
+          example: doggie
