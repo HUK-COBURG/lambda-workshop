@@ -1,6 +1,6 @@
 module "lambda" {
   source  = "terraform-aws-modules/lambda/aws"
-  version = "7.20.1"
+  version = "7.21.0"
 
   function_name = local.full_name
   runtime       = "java21"

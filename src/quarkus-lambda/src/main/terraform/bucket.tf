@@ -5,7 +5,7 @@ locals {
 
 module "s3-bucket" {
   source  = "terraform-aws-modules/s3-bucket/aws"
-  version = "4.5.0"
+  version = "4.9.0"
 
   bucket_prefix = local.full_name
   force_destroy = true
